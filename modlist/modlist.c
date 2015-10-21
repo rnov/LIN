@@ -3,6 +3,7 @@
 #include <linux/proc_fs.h> /* file_system_operations */
 #include <linux/list.h> /* Hacemos uso de lista */
 #include <asm/uaccess.h> /* Hacemos uso cpy espacio usuario<-> kenel*/
+#include <linux/ftrace.h> /* debugging */
 
 MODULE_LICENSE("GPL"); /* Licencia del modulo */
 
@@ -36,11 +37,14 @@ static ssize_t list_write(struct file *filp, const char __user *buf, size_t len,
     	return -EFAULT;
 
 	if(sscanf(kbuf, "add %i", &num) == 1) {  // add command
+		trace_printk("Executing command 'add %i'", num);
+		
 		list_item_t *new_node;
     	new_node = vmalloc(sizeof(list_item_t));
     	new_node->data = num;
 		list_add_tail(&(new_node->links), &mylist); 
 	}else if(sscanf(kbuf, "remove %i", &num) == 1){  // remove command, 
+		trace_printk("Executing command 'remove %i'", num);
 	  	Foreach(pos, aux, &mylist)
 			elem = list_entry(pos, list_item_t, links);
 			if(elem->data == num){  
@@ -74,7 +78,7 @@ int init_list_module( void )
 	int ret = 0;
     proc_entry = proc_create( "modlist", 0666, NULL, &proc_entry_fops);
     if(proc_entry == NULL){
-    	ret = -ENOMEN;
+    	ret = -ENOMEM;
     	printk(KERN_INFO "modlist: Can't create /proc entry\n");
     }else{
 	    /* Inicializamos la lista*/
@@ -91,8 +95,8 @@ void exit_list_module( void )
   remove_proc_entry("modlist", NULL);
   struct list_head *pos, *aux;
   list_item_t *tmp;
-  list_for_each_safe(pos, aux, mylist){
-	  tmp = list_entry(pos, struct list_item_t, links);
+  list_for_each_safe(pos, aux, &mylist){
+	  tmp = list_entry(pos, list_item_t, links);
 	  list_del(pos);
 	  vfree(tmp);
   }
