@@ -55,6 +55,15 @@ static ssize_t list_write(struct file *filp, const char __user *buf, size_t len,
                 vfree(elem);
             }
         Endforeach()
+    }else if(sscanf(kbuf, "cleanup") == 0){  // cleanup command, 
+        trace_printk("Executing command 'cleanup'\n");
+        Foreach(pos, aux, &mylist)
+            elem = list_entry(pos, list_item_t, links);
+            
+            trace_printk("At elem '%i' (@%p)\n", elem->data, elem);
+            list_del(pos);
+            vfree(elem);
+        Endforeach()
     }else
         printk(KERN_INFO "Unknown command");
 
