@@ -80,19 +80,19 @@ static ssize_t list_read(struct file *filp, char __user *buf, size_t len, loff_t
     if((*off) > 0)
         return 0;
 
-    buffpos += sprintf(buffpos, "(");
+    //buffpos += sprintf(buffpos, "(");
 
     Foreach(pos, aux, &mylist)
         elem = list_entry(pos, list_item_t, links);
         trace_printk("At elem '%i' (@%p)\n", elem->data, elem);
         
-        buffpos += sprintf(buffpos, "%i,", elem->data);
+        buffpos += sprintf(buffpos, "%i\n", elem->data);
     Endforeach()
 
     if(buffpos > &kbuff[0] + 1)
         buffpos--; // Go back one byte to overwrite last colon
 
-    buffpos += sprintf(buffpos, ")\n");
+    //buffpos += sprintf(buffpos, ")\n");
 
     size_t written = min(len, buffpos - &kbuff[0]);
 
