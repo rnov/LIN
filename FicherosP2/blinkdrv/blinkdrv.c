@@ -111,21 +111,25 @@ static ssize_t blink_write(struct file *file, const char *user_buffer,
 {
 	struct usb_blink *dev=file->private_data;
 	int retval = 0;
-	int i=0;
 	unsigned char message[NR_BYTES_BLINK_MSG];
-	static int color_cnt=0;
-	unsigned int color;
 	char input_buffer[64] = {};
 	char* read_ptr = &(input_buffer[0]);
-	char r = -1, g = -1, b = -1;
+	int r = -1, g = -1, b = -1;
 	int led_index = -1;
 
         copy_from_user(input_buffer, user_buffer, len);
         input_buffer[len] = '\0';
 
+	int readedBytes = 0, matches = 0;
 	
-	while(led_index < 0 && sscanf(read_ptr, "%i:(%i,%i,%i)", &led_index, &r, &g, &b) == 4)
-	{	
+	do 
+        {	
+            matches = sscanf(read_ptr, "%i:(%i,%i,%i)%n", &led_index, &r, &g, &b, &readedBytes);
+
+            if(matches != 4 || led_index > 7 || led_index < 0) break;
+
+            read_ptr += readedBytes;
+
 	    /* zero fill*/
 	    memset(message,0,NR_BYTES_BLINK_MSG);
 
@@ -155,7 +159,7 @@ static ssize_t blink_write(struct file *file, const char *user_buffer,
 	 	printk(KERN_ALERT "Executed with retval=%d\n",retval);
 		goto out_error;		
 	    }
-	}
+	}while(read_ptr < &(input_buffer[len]));
 
 	(*off)+=len;
 	return len;
