@@ -21,6 +21,8 @@
 #include <linux/usb.h>
 #include <linux/mutex.h>
 #include <linux/vmalloc.h>
+#include <linux/string.h>
+#include <linux/ftrace.h>
 
 MODULE_LICENSE("GPL");
 
@@ -98,12 +100,10 @@ static int blink_release(struct inode *inode, struct file *file)
 
 #define NR_LEDS 8
 #define NR_BYTES_BLINK_MSG 6
-
+#define NR_MAX_BYTES = 88;  //10 chars per led, 8 leds,7 commas + \0 kernel buffer
 
 
 #define NR_SAMPLE_COLORS 4
-
-unsigned int sample_colors[]={0x0000FF, 0x110000, 0x001100, 0x000000};
 
 /* Called when a user program invokes the write() system call on the device */
 static ssize_t blink_write(struct file *file, const char *user_buffer,
@@ -111,61 +111,70 @@ static ssize_t blink_write(struct file *file, const char *user_buffer,
 {
 	struct usb_blink *dev=file->private_data;
 	int retval = 0;
-	unsigned char message[NR_BYTES_BLINK_MSG];
-	char input_buffer[64] = {};
-	char* read_ptr = &(input_buffer[0]);
-	int r = -1, g = -1, b = -1;
-	int led_index = -1;
-
-        copy_from_user(input_buffer, user_buffer, len);
-        input_buffer[len] = '\0';
-
-	int readedBytes = 0, matches = 0;
+	unsigned int color;
+	int i = 0;
+	unsigned char messages[NR_LEDS][NR_BYTES_BLINK_MSG];
+	char kbuf [88] = {};  
+	int nLed = 0;
+	char *auxKbuf = kbuf;
+	char *oneLedInfo;
+	const char *delim = ",";
 	
-	do 
-        {	
-            matches = sscanf(read_ptr, "%i:(%i,%i,%i)%n", &led_index, &r, &g, &b, &readedBytes);
-
-            if(matches != 4 || led_index > 7 || led_index < 0) break;
-
-            read_ptr += readedBytes;
-
-	    /* zero fill*/
-	    memset(message,0,NR_BYTES_BLINK_MSG);
-
-	    /* Fill up the message accordingly */ 
-	    message[0]='\x05';
-	    message[1]=0x00;
-	    message[2]=led_index; 
-	    message[3]=r;
- 	    message[4]=g;
-  	    message[5]=b;
-
-	    /* 
-	     * Send message (URB) to the Blinkstick device 
-	     * and wait for the operation to complete 
-	     */
-	    retval=usb_control_msg(dev->udev,	
+	if(copy_from_user(kbuf,user_buffer,len)!=0) goto in_buf_error;
+	kbuf[len] = '\0';
+	
+	/* zero fill*/
+	memset(messages,0,NR_LEDS*NR_BYTES_BLINK_MSG);  
+	
+	for(i=0;i<NR_LEDS;i++){
+		messages[i][0] = '\x05';
+		messages[i][1] = 0x00;
+		messages[i][2] = i;
+	}
+	trace_printk("kbuf: %s: %i : %i'\n", kbuf,strlen(kbuf),memcmp(kbuf,"\0",len));
+	
+	if(strlen(kbuf)>1){  // Not empty msg
+		do{	
+			/*get led info nº:color*/
+			oneLedInfo = strsep(&auxKbuf,delim);
+			
+			if(sscanf(oneLedInfo,"%d:%x",&nLed,&color)==2 && (nLed >= 0 && nLed < 8)){	
+				messages[nLed][2]=nLed;
+				messages[nLed][3]=((color>>16) & 0xff);  // red
+				messages[nLed][4]=((color>>8) & 0xff);  // green
+				messages[nLed][5]=(color & 0xff);  // blue
+			}  // sscanf
+		}while(auxKbuf != NULL);
+	}
+	for(i=0;i<NR_LEDS;i++){	
+		/* 
+		 * Send message (URB) to the Blinkstick device 
+		 * and wait for the operation to complete 
+		 */
+		retval=usb_control_msg(dev->udev,	
 			 usb_sndctrlpipe(dev->udev,00), /* Specify endpoint #0 */
 			 USB_REQ_SET_CONFIGURATION, 
 			 USB_DIR_OUT| USB_TYPE_CLASS | USB_RECIP_DEVICE,
 			 0x5,	/* wValue */
 			 0, 	/* wIndex=Endpoint # */
-			 message,	/* Pointer to the message */ 
+			 messages[i],	/* Pointer to the message */ 
 			 NR_BYTES_BLINK_MSG, /* message's size in bytes */
 			 0);		
 
-	    if (retval<0){
-	 	printk(KERN_ALERT "Executed with retval=%d\n",retval);
-		goto out_error;		
-	    }
-	}while(read_ptr < &(input_buffer[len]));
-
+		if (retval<0){
+			printk(KERN_ALERT "Executed with retval=%d\n",retval);
+			goto out_error;		
+			}
+	}  // for
+	
 	(*off)+=len;
 	return len;
 
 out_error:
-	return retval;	
+	return retval;
+
+in_buf_error:
+	return  88-len;  // always < 0
 }
 
 
