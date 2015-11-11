@@ -100,9 +100,7 @@ static int blink_release(struct inode *inode, struct file *file)
 
 #define NR_LEDS 8
 #define NR_BYTES_BLINK_MSG 6
-#define NR_MAX_BYTES = 88;  //10 chars per led, 8 leds,7 commas + \0 kernel buffer
-
-
+#define NR_MAX_BYTES 88  //10 chars per led, 8 leds,7 commas + \0 kernel buffer
 #define NR_SAMPLE_COLORS 4
 
 /* Called when a user program invokes the write() system call on the device */
@@ -114,17 +112,18 @@ static ssize_t blink_write(struct file *file, const char *user_buffer,
 	unsigned int color;
 	int i = 0;
 	unsigned char messages[NR_LEDS][NR_BYTES_BLINK_MSG];
-	char kbuf [88] = {};  
+	char kbuf [NR_MAX_BYTES] = {};  
 	int nLed = 0;
 	char *auxKbuf = kbuf;
 	char *oneLedInfo;
 	const char *delim = ",";
 	
-	if(copy_from_user(kbuf,user_buffer,len)!=0) goto in_buf_error;
+	if(copy_from_user(kbuf,user_buffer,len)!=0) 
+		return -ENOSPC;
 	kbuf[len] = '\0';
 	
 	/* zero fill*/
-	memset(messages,0,NR_LEDS*NR_BYTES_BLINK_MSG);  
+	memset(messages,0,NR_LEDS*NR_BYTES_BLINK_MSG);
 	
 	for(i=0;i<NR_LEDS;i++){
 		messages[i][0] = '\x05';
@@ -146,7 +145,7 @@ static ssize_t blink_write(struct file *file, const char *user_buffer,
 			}  // sscanf
 		}while(auxKbuf != NULL);
 	}
-	for(i=0;i<NR_LEDS;i++){	
+	for(i=0;i<NR_LEDS;i++){
 		/* 
 		 * Send message (URB) to the Blinkstick device 
 		 * and wait for the operation to complete 
@@ -172,9 +171,6 @@ static ssize_t blink_write(struct file *file, const char *user_buffer,
 
 out_error:
 	return retval;
-
-in_buf_error:
-	return  88-len;  // always < 0
 }
 
 
