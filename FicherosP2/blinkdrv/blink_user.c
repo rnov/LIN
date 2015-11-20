@@ -24,15 +24,15 @@ int main(int argc, char **argv)
 		srand(time(NULL));
 		for(;i<4;i++){
 			/*random options*/
+			
 			do{
 				aux_ct = rand()%N_COUNTRIES;
 				aux_opt = rand()%N_COUNTRIES;
-			}while(led_ct == aux_opt || led_ct == aux_ct || aux_ct == aux_opt);
+			}while(aux_ct == aux_opt || aux_ct == led_ct || aux_opt == opt);
 			led_ct = aux_ct;
 			opt = aux_opt;
 
-			if(write(fd,ct_flags[led_ct],N_CHARS)== -1) 
-				printf("Write error \n");
+			if(write(fd,ct_flags[led_ct],N_CHARS)== -1)goto FAIL_WRITE;
 			
 			if(led_ct%2==0){
 				printf("\na : %s		b : %s\n",ct_names[led_ct],ct_names[opt]);
@@ -49,12 +49,21 @@ int main(int argc, char **argv)
 			if(anw_c == right_c)
 				printf("\nCorrecto!\n");
 			else
-				printf("\nError \n");		
+				printf("\nIncorrecto \n");		
 		}
-	}else 
-		printf("open error fd: %i\n",fd);
-	close(fd);
+	}else{ 
+		perror("Error: ");
+		return -1;
+	}
 	
+	if(write(fd,"",0)== -1) goto FAIL_WRITE;
+	
+	close(fd);
 	return 0;
+	
+FAIL_WRITE:
+	perror("Error!: ");
+	close(fd);
+	return -1;
 }
 
