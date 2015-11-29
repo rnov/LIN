@@ -1,0 +1,19 @@
+#!/bin/sh
+
+DEBUG_KERNEL_DIRECTORY="/sys/kernel/debug"
+FTRACE_DIRECTORY="${DEBUG_KERNEL_DIRECTORY}/tracing"
+LOG_FILE="trace_pipe.log"
+
+if [ ! -d "$FTRACE_DIRECTORY" ]; then
+    mount -t debugfs nodev $DEBUG_KERNEL_DIRECTORY
+fi;
+
+echo 1 > ${FTRACE_DIRECTORY}/tracing_on
+
+if [ ! -f "$LOG_FILE" ]; then
+    touch $LOG_FILE
+fi;
+
+echo "$(date '+%d/%m/%Y %H:%M:%S') session:\n==============================" >> $LOG_FILE
+
+cat ${FTRACE_DIRECTORY}/trace_pipe | tee --append $LOG_FILE
