@@ -180,15 +180,15 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buff, size_t len, l
 	char kbuffer[MAX_KBUF] ={};
 		
 	if((*off) > 0)
-      return 0;
+      return 0; 
 	
 	//trace_printk("READ size len: %i  %i '\n", len,strlen(kbuffer));
-	//if (len> MAX_CBUFFER_LEN || len> MAX_KBUF) { return -ENOSPC;}
+	//if (len > MAX_CBUFFER_LEN || len > MAX_KBUF) { return -ENOSPC;}
 	
 	//lock(mtx);
 	if (down_interruptible(&mtx)){return -EINTR;}
 		
-	while (size_cbuffer_t(cbuffer) < len && prod_count > 0){
+	while (size_cbuffer_t(cbuffer) < MAX_CBUFFER_LEN && prod_count > 0){
 		//cond_wait(cons,mtx); queue_sem_cons -> const
 		nr_cons_waiting++;
 		up(&mtx);
@@ -206,7 +206,7 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buff, size_t len, l
 	if (prod_count==0 && is_empty_cbuffer_t(cbuffer) != 0) {up(&mtx); return 0;}
 	
 	/*len chars de cbuffer a kbuf*/
-	remove_items_cbuffer_t(cbuffer,kbuffer,len);
+	remove_items_cbuffer_t(cbuffer,kbuffer,MAX_CBUFFER_LEN);
 	
 	/*Despertar productor bloqueado*/
 	//cond_signal(prod); 
@@ -218,7 +218,7 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buff, size_t len, l
 	up(&mtx);
 	
 	// returns to user space 
-	if(copy_to_user(buff,kbuffer,len)){return -EFAULT;}
+	if(copy_to_user(buff,kbuffer,MAX_CBUFFER_LEN)){return -EFAULT;}
 	
 	
 	(*off) += len;
@@ -232,16 +232,19 @@ static ssize_t fifoproc_write(struct file *file, const char __user *buff, size_t
 	
 	char kbuffer[MAX_KBUF]={};
 	
-	if(len> MAX_CBUFFER_LEN || len> MAX_KBUF) {return -ENOSPC;}
-	//trace_printk("WRITE size len: %i \n", len);
+	if(copy_from_user(kbuffer,(*buff).data ,(*buff).nr_bytes)) {return -EFAULT;}
 	
-	if(copy_from_user(kbuffer,buff,len)) {return -EFAULT;}
+	/*nº bytes mns*/
+	unsigned int nr_bytes = (*buff).nr_bytes;
+	
+	if(nr_bytes> MAX_CBUFFER_LEN || nr_bytes> MAX_KBUF) {return -ENOSPC;}
+	//trace_printk("WRITE size len: %i \n", len);
 		
 	//lock(mtx);
 	if (down_interruptible(&mtx)){return -EINTR;}
 		
 	/* Esperar hasta que haya hueco para insertar (debe haber consumidores) */
-	while (nr_gaps_cbuffer_t(cbuffer)< len && cons_count > 0){
+	while (nr_gaps_cbuffer_t(cbuffer)< nr_bytes && cons_count > 0){
 		//cond_wait(prod,mtx);  // queue_sem_prod -> prod
 		nr_prod_waiting++;
 		up(&mtx);
@@ -260,7 +263,7 @@ static ssize_t fifoproc_write(struct file *file, const char __user *buff, size_t
 	if(cons_count==0){up(&mtx); return -EPIPE;}
 	
 	/*len bytes from kbuffer to cbuffer*/
-	insert_items_cbuffer_t(cbuffer,kbuffer,len);
+	insert_items_cbuffer_t(cbuffer,kbuffer,nr_bytes);
 	
 	/* Despertar consumidor bloqueado */
 	//cond_signal(cons);

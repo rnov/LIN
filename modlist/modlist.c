@@ -80,7 +80,6 @@ static ssize_t list_read(struct file *filp, char __user *buf, size_t len, loff_t
     if((*off) > 0)
         return 0;
 
-    //buffpos += sprintf(buffpos, "(");
 
     Foreach(pos, aux, &mylist)
         elem = list_entry(pos, list_item_t, links);

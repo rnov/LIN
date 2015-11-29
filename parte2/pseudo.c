@@ -76,29 +76,106 @@ static int fifoproc_open(struct inode *inode, struct file *file){
 		/* Un consumidor abrió el FIFO */
 		lock(mtx);
 		
-		/* nº procesos que abrieron entrada lectura*/
-		if(cons_count <1)
-			cons_count +=1;
+		/* nº procesos que abrieron entrada lectura*/		
+		cons_count += 1;
 		
 		/*NO haya productor, nos bloqueamos*/
 		while (prod_count < 1){
 			cond_wait(cons,mtx);
-		}	
-		
-		unlock();
+		}
+
+		cons_signal(prod);	
+		/**/
+		unlock(mtx);
 	}else{
 		/* Un productor abrió el FIFO */
 		lock(mtx);
 		
 		/* nº procesos que abrieron entrada escritura*/
-		if(prod_count<1)
-			prod_count +=1;
+		prod_count +=1;
 		
 		/*NO haya consumidor, nos bloqueamos*/
 		while (cons_count < 1){
 			cond_wait(prod,mtx);
-		}	
+		}
+		cons_signal(cons);
+		/**/	
 		unlock(mtx);
+	}
+	
+	return 0;
+}
+
+static int fifoproc_open(struct inode *inode, struct file *file){
+	
+	// esperar a los dos que estén inicializados. 
+	if(file->f_mode & FMODE_READ){
+		
+		/* Un consumidor abrió el FIFO */
+		//lock(mtx);
+		if (down_interruptible(&mtx)){return -EINTR;}
+		/* nº procesos que abrieron entrada lectura*/		
+		cons_count += 1;
+		
+		/*NO haya productor, nos bloqueamos*/
+		/*while (prod_count < 1){
+			cond_wait(cons,mtx);
+		}*/
+        while (prod_count == 0){
+        	nr_cons_waiting++;
+        	up(&mtx);
+            if(down_interruptible(&queue_sem_cons)){
+                down_interruptible(&mtx);
+                nr_cons_waiting--;
+                up(&mtx);
+                return -EINTR;
+            }
+            if(down_interruptible(&mtx))
+                return -EINTR;
+        }  // while
+		
+		//cons_signal(prod_count);
+		if(nr_prod_waiting > 0 ) {
+            up(&queue_sem_prod);
+            nr_prod_waiting--;
+        }
+
+        up(&mtx);
+		//unlock(mtx);
+	
+	}else{
+		/* Un productor abrió el FIFO */
+		//lock(mtx);
+		if (down_interruptible(&mtx)){return -EINTR;}
+
+		/* nº procesos que abrieron entrada escritura*/
+		prod_count +=1;
+		
+		/*NO haya consumidor, nos bloqueamos*/
+		/*while (cons_count < 1){
+			cond_wait(prod,mtx);
+		}*/
+		while (cons_count == 0){
+        	nr_prod_waiting++;
+        	up(&mtx);
+            if(down_interruptible(&queue_sem_prod)){
+                down_interruptible(&mtx);
+                nr_prod_waiting--;
+                up(&mtx);
+                return -EINTR;
+            }
+            if(down_interruptible(&mtx))
+                return -EINTR;
+        }  // while
+
+		//cons_signal(prod_count);
+		if(nr_cons_waiting > 0 ) {
+            up(&queue_sem_cons);
+            nr_cons_waiting--;
+        }
+
+        up(&mtx);
+		//unlock(mtx);
 	}
 	
 	return 0;
@@ -109,6 +186,7 @@ void fifoproc_release(struct inode *inode, struct file *file){
 	/* Completar */
 	// hacer al final dependen de las variables condición 
 	//vaciar el buffer circular cuando los dos esten cerrados
+	// decrementar los prod cons conectados
 
 
 }

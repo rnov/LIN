@@ -37,10 +37,10 @@ static void fifo_send (const char* path_fifo) {
     - Leer de la entrada estandar hasta fin de fichero
  */
   while((bytes=read(0,message.data,MAX_MESSAGE_SIZE))>0) {
-	message.nr_bytes=bytes;
-	wbytes=write(fd_fifo,&message,size);
+	message.nr_bytes = bytes;
+	wbytes = write(fd_fifo,&message,size);
 
-	if (wbytes > 0 && wbytes!=size) {
+	if (wbytes > 0 && wbytes != size) {
 		fprintf(stderr,"Can't write the whole register\n");
 		exit(1);
   	}else if (wbytes < 0){
@@ -51,6 +51,7 @@ static void fifo_send (const char* path_fifo) {
   
   if (bytes < 0) {
 	fprintf(stderr,"Error when reading from stdin\n");
+	//fprintf("bytes : %i \n",bytes);
 	exit(1);
   }
   
@@ -71,7 +72,7 @@ static void fifo_receive (const char* path_fifo) {
   }
 
 
-  while((bytes=read(fd_fifo,&message,size))==size) {
+  while( (bytes= read(fd_fifo,&message,size)) == size) {
 	/* Write to stdout */
 	wbytes= write(1,message.data,message.nr_bytes);
 	
@@ -86,6 +87,7 @@ static void fifo_receive (const char* path_fifo) {
 	exit(1);
   }else if (bytes < 0) {
 	fprintf(stderr,"Error when reading from the FIFO\n");
+	//fprintf("bytes : %i \n",bytes);
 	exit(1);
   }
 	

@@ -11,14 +11,19 @@
 #define NULL 0
 #endif
 
+#ifdef __KERNEL__
+#define CBUFF_ALLOC vmalloc
+#define CBUFF_FREE vfree
+#else
+#define CBUFF_ALLOC malloc
+#define CBUFF_FREE free
+#endif
+
 /* Create cbuffer */
 cbuffer_t* create_cbuffer_t (unsigned int max_size)
 {
-#ifdef __KERNEL__ 
-	cbuffer_t *cbuffer= (cbuffer_t *)vmalloc(sizeof(cbuffer_t));
-#else
-	cbuffer_t *cbuffer= (cbuffer_t *)malloc(sizeof(cbuffer_t));
-#endif
+	cbuffer_t *cbuffer= (cbuffer_t *)CBUFF_ALLOC(sizeof(cbuffer_t));
+
 	if (cbuffer == NULL)
 	{
 	    return NULL;
@@ -28,18 +33,11 @@ cbuffer_t* create_cbuffer_t (unsigned int max_size)
 	cbuffer->max_size=max_size;
 
 	/* Stores bytes */
-#ifdef __KERNEL__ 
-	cbuffer->data=vmalloc(max_size);
-#else
-	cbuffer->data=malloc(max_size);
-#endif
+	cbuffer->data=CBUFF_ALLOC(max_size);
+
 	if ( cbuffer->data == NULL)
 	{
-#ifdef __KERNEL__ 
-		vfree(cbuffer->data);
-#else
-		free(cbuffer->data);
-#endif
+		CBUFF_FREE(cbuffer->data);
 		return NULL;
 	}
 	return cbuffer;
@@ -51,13 +49,9 @@ void destroy_cbuffer_t ( cbuffer_t* cbuffer )
     cbuffer->size=0;
     cbuffer->head=0;
     cbuffer->max_size=0;
-#ifdef __KERNEL__ 
-    vfree(cbuffer->data);
-    vfree(cbuffer);
-#else
-    free(cbuffer->data);
-    free(cbuffer);
-#endif
+
+    CBUFF_FREE(cbuffer->data);
+    CBUFF_FREE(cbuffer);
 }
 
 /* Returns the number of elements in the buffer */
