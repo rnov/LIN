@@ -9,8 +9,8 @@
 #include <linux/ftrace.h>
 #include "cbuffer.h"
 
-#define MAX_CBUFFER_LEN 32
-#define MAX_KBUF 60 
+#define MAX_CBUFFER_LEN 50
+#define MAX_KBUF MAX_CBUFFER_LEN 
 
 cbuffer_t* cbuffer; /* Buffer circular */
 static struct proc_dir_entry *proc_entry;
@@ -25,53 +25,6 @@ struct semaphore queue_sem_cons; /* cola de espera para consumidor(es) */
 
 int nr_prod_waiting=0; /* Número de procesos productores esperando */
 int nr_cons_waiting=0; /* Número de procesos consumidores esperando */
-
-/* Se invoca al hacer open() de entrada /proc */
-/*static int fifoproc_open(struct inode *inode, struct file *file){
-    
-    if(file->f_mode & FMODE_READ)
-    {
-        if (down_interruptible(&mtx)){return -EINTR;}
-
-        cons_count++;
-        while (prod_count == 0){
-			         
-            up(&mtx);
-            if(down_interruptible(&queue_sem_cons)){
-                down_interruptible(&mtx);
-                cons_count--;
-                up(&mtx);
-                return -EINTR;
-            }
-            if(down_interruptible(&mtx))
-                return -EINTR;
-        }  // while
-        //up(&queue_sem_prod);  // aqui o en while ?
-        up(&mtx);
-    }
-    else
-    {
-        if(down_interruptible(&mtx)){return -EINTR;}
-        
-        prod_count++;  
-        
-        while (cons_count == 0){
-           //up(&queue_sem_cons);
-           up(&mtx);
-            if(down_interruptible(&queue_sem_prod)){
-                down_interruptible(&mtx);
-                prod_count--;
-                up(&mtx);
-                return -EINTR;
-            }
-            if(down_interruptible(&mtx))
-                return -EINTR;
-        }  // while
-        //up(&queue_sem_cons);
-        up(&mtx);
-    }
-    return 0;
-}*/
 
 static int fifoproc_open(struct inode *inode, struct file *file){
 	
@@ -93,7 +46,7 @@ static int fifoproc_open(struct inode *inode, struct file *file){
         	nr_cons_waiting++;
         	up(&mtx);
             if(down_interruptible(&queue_sem_cons)){
-                down_interruptible(&mtx);
+                down(&mtx);
                 nr_cons_waiting--;
                 up(&mtx);
                 return -EINTR;
@@ -128,7 +81,7 @@ static int fifoproc_open(struct inode *inode, struct file *file){
         	nr_prod_waiting++;
         	up(&mtx);
             if(down_interruptible(&queue_sem_prod)){
-                down_interruptible(&mtx);
+                down(&mtx);
                 nr_prod_waiting--;
                 up(&mtx);
                 return -EINTR;
@@ -152,38 +105,40 @@ static int fifoproc_open(struct inode *inode, struct file *file){
 
 /* Se invoca al hacer close() de entrada /proc */
 static int fifoproc_release(struct inode *inode, struct file *file){
+
+   if(down_interruptible(&mtx)){return -EINTR;}
+
     if(file->f_mode & FMODE_READ)
     {
-        if(down_interruptible(&mtx)){return -EINTR;}
-
-        clear_cbuffer_t(cbuffer);
         cons_count--;
-        up(&mtx);
-    }
+	//cond_signal(prod); 
+	if(nr_prod_waiting >0){  
+		up(&queue_sem_prod);
+		nr_prod_waiting--;
+		}  
+  }
     else
     {
-       if(down_interruptible(&mtx)){return -EINTR;}
-	   
-	   clear_cbuffer_t(cbuffer);
-       prod_count--;
-       up(&mtx);
+	prod_count--;
+	//cond_signal(cons); 
+	if(nr_cons_waiting >0){  
+		up(&queue_sem_cons);
+		nr_cons_waiting--;
+		}
     }
 
-    
-    return 0;
+   if (prod_count==0 && cons_count==0)
+	  clear_cbuffer_t(cbuffer);
+   up(&mtx);
+        
+   return 0;
 }
 
 /*NO confundir el buff que nos pasan con el cbuffer que leemos*/
 /*done*/
 static ssize_t fifoproc_read(struct file *filp, char __user *buff, size_t len, loff_t *off){
 	
-	char kbuffer[MAX_KBUF] ={};
-		
-	if((*off) > 0)
-      return 0;
-	
-	//trace_printk("READ size len: %i  %i '\n", len,strlen(kbuffer));
-	//if (len> MAX_CBUFFER_LEN || len> MAX_KBUF) { return -ENOSPC;}
+	char kbuffer[MAX_KBUF] ={};	
 	
 	//lock(mtx);
 	if (down_interruptible(&mtx)){return -EINTR;}
@@ -193,7 +148,7 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buff, size_t len, l
 		nr_cons_waiting++;
 		up(&mtx);
 		if(down_interruptible(&queue_sem_cons)){
-			down_interruptible(&mtx);
+			down(&mtx);
 			nr_cons_waiting--;
 			up(&mtx);
 			return -EINTR;
@@ -203,7 +158,7 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buff, size_t len, l
 	}  // while
 	
 	/* Detectar fin de comunicación por error (consumidor cierra FIFO antes) */
-	if (prod_count==0 && is_empty_cbuffer_t(cbuffer) != 0) {up(&mtx); return 0;}
+	if (prod_count==0 && is_empty_cbuffer_t(cbuffer)) {up(&mtx); return 0;}
 	
 	/*len chars de cbuffer a kbuf*/
 	remove_items_cbuffer_t(cbuffer,kbuffer,len);
@@ -220,8 +175,6 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buff, size_t len, l
 	// returns to user space 
 	if(copy_to_user(buff,kbuffer,len)){return -EFAULT;}
 	
-	
-	(*off) += len;
 	/*nº bytes leídos (>0 se podra volver a llamar, 0 eof)*/
 	return len;
 }
@@ -233,7 +186,6 @@ static ssize_t fifoproc_write(struct file *file, const char __user *buff, size_t
 	char kbuffer[MAX_KBUF]={};
 	
 	if(len> MAX_CBUFFER_LEN || len> MAX_KBUF) {return -ENOSPC;}
-	//trace_printk("WRITE size len: %i \n", len);
 	
 	if(copy_from_user(kbuffer,buff,len)) {return -EFAULT;}
 		
@@ -247,7 +199,7 @@ static ssize_t fifoproc_write(struct file *file, const char __user *buff, size_t
 		up(&mtx);
 		/*Bloqueo en sem de cola*/
 		if(down_interruptible(&queue_sem_prod)){
-			down_interruptible(&mtx);
+			down(&mtx);
 			nr_prod_waiting--;
 			up(&mtx);
 			return -EINTR;
@@ -270,8 +222,6 @@ static ssize_t fifoproc_write(struct file *file, const char __user *buff, size_t
 	}
 	//unlock(mtx);
 	up(&mtx);
-	
-	(*off)+= len;
 	
 	/*nº bytes escritos*/
 	return len;	  
@@ -299,7 +249,7 @@ int init_fifoproc_module( void ){
 	if(!cbuffer)
 		return -ENOMEM;
 	
-	proc_entry = proc_create("NUESTRO_PIPE",0666, NULL, &proc_entry_fops);
+	proc_entry = proc_create("modfifo",0666, NULL, &proc_entry_fops);
 	
 	if (proc_entry == NULL) {
 		destroy_cbuffer_t(cbuffer);
@@ -313,7 +263,7 @@ int init_fifoproc_module( void ){
 
 /*done*/
 void exit_fifoproc_module( void ){
-	remove_proc_entry("NUESTRO_PIPE", NULL);
+	remove_proc_entry("modfifo", NULL);
 	destroy_cbuffer_t(cbuffer);
 	printk(KERN_INFO "Modulo descargado: prodcons.\n");
 }

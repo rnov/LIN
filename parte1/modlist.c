@@ -32,7 +32,7 @@ static struct proc_dir_entry *proc_entry;
 DEFINE_SPINLOCK(mr_lock);
 unsigned long flags;
 
-/* Write, Sin repetir numeros*/
+/* Write*/
 static ssize_t list_write(struct file *filp, const char __user *buf, size_t len, loff_t *off) {
 
     char kbuf[len]; int num;
@@ -51,15 +51,15 @@ static ssize_t list_write(struct file *filp, const char __user *buf, size_t len,
         list_item_t *new_node;
         new_node = vmalloc(sizeof(list_item_t));
         new_node->data = num;
-			
+		/*SPIN_LOCK*/	
 		spin_lock(&mr_lock); 
 		list_add_tail(&(new_node->links), &mylist);
 		spin_unlock(&mr_lock);
+		/*SPIN_UNLOCK*/
     
     }else if(sscanf(kbuf, "remove %i ", &num) == 1){  // remove command, 
         trace_printk("Executing command 'remove %i'\n", num);
-		//list_item_t *auxElem = NULL;
-		
+		/*SPIN_LOCK*/
 		spin_lock(&mr_lock);
 		Foreach(pos, aux, &mylist)   
 		elem = list_entry(pos, list_item_t, links);
@@ -69,21 +69,15 @@ static ssize_t list_write(struct file *filp, const char __user *buf, size_t len,
 		if(elem->data == num){
 			trace_printk("Found elem '%i'. Removing...\n", elem->data);
 			list_del(pos);
-			//auxElem = elem;
-			vfree(auxElem);
+			vfree(elem);
 			}
 		Endforeach()
 		spin_unlock(&mr_lock);
+		/*SPIN_UNLOCK*/
 		
-		/*
-		if(auxElem){  // En caso de no NULL entonce hay borrar...
-			trace_printk("vfree '%i' \n", auxElem->data);	
-			vfree(auxElem);
-		}*/
-
     }else if(strcmp(kbuf, "cleanup\n") == 0){
         trace_printk("Executing command 'cleanup'\n");
-     
+		/*SPIN_LOCK*/
 		spin_lock(&mr_lock);
 		Foreach(pos, aux, &mylist)
 			elem = list_entry(pos, list_item_t, links);
@@ -92,6 +86,7 @@ static ssize_t list_write(struct file *filp, const char __user *buf, size_t len,
 			vfree(elem);
         Endforeach()
         spin_unlock(&mr_lock);
+        /*SPIN_UNLOCK*/
     }else
         printk(KERN_INFO "Unknown command");
 
@@ -107,7 +102,7 @@ static ssize_t list_read(struct file *filp, char __user *buf, size_t len, loff_t
 
     if((*off) > 0)
         return 0;
-
+	/*SPIN_LOCK*/
 	spin_lock(&mr_lock);
     Foreach(pos, aux, &mylist)
         elem = list_entry(pos, list_item_t, links);
@@ -116,6 +111,7 @@ static ssize_t list_read(struct file *filp, char __user *buf, size_t len, loff_t
         buffpos += sprintf(buffpos, "%i\n", elem->data);
     Endforeach()
     spin_unlock(&mr_lock);
+    /*SPIN_UNLOCK*/
 
     if(buffpos > &kbuff[0] + 1)
         buffpos--; // Go back one byte to overwrite last colon
@@ -153,7 +149,6 @@ int init_list_module( void )
         INIT_LIST_HEAD(&mylist);
         printk(KERN_INFO "modlist: Module loaded\n");
     }
-    
     return ret;
 }
 

@@ -1,10 +1,6 @@
 /*pseudocódigo para el apartado B*/
 
 /*Corregido*/
-/* nr_gaps_cbuffer_t(cbuffer) < size_cbuffer_t(cbuffer) ->  read: numero huecos es igual al tamaño.
- * size_cbuffer_t -> Returns the number of elements in the buffer
- * Solución que me dio pero no le encuentro la lógica, creo que se equivoco
- * */
 int fifo_proc_read(char* buff, int len) {
 	
 	char kbuffer[MAX_KBUF];
@@ -36,7 +32,6 @@ int fifo_proc_read(char* buff, int len) {
 }
 // is_empty_cbuffer_t() == 0 read: el prod habrá cerrado y cerramos nosotros también.
 
-
 // nr_gaps_cbuffer_t(cbuffer)<len -> write: menos libres de los que quiero escribir.
 /* Dado */
 int fifoproc_write(char* buff, int len) {
@@ -67,15 +62,13 @@ int fifoproc_write(char* buff, int len) {
 	return len;
 }
 
-/* Sin Corregir, sin acabar ? */
+/* done */
 static int fifoproc_open(struct inode *inode, struct file *file){
 	
 	// esperar a los dos que estén inicializados. 
 	if(file->f_mode & FMODE_READ){
-		
 		/* Un consumidor abrió el FIFO */
 		lock(mtx);
-		
 		/* nº procesos que abrieron entrada lectura*/		
 		cons_count += 1;
 		
@@ -83,14 +76,14 @@ static int fifoproc_open(struct inode *inode, struct file *file){
 		while (prod_count < 1){
 			cond_wait(cons,mtx);
 		}
-
-		cons_signal(prod);	
-		/**/
+		cons_signal(prod_count);
+		
 		unlock(mtx);
+	
 	}else{
+		
 		/* Un productor abrió el FIFO */
 		lock(mtx);
-		
 		/* nº procesos que abrieron entrada escritura*/
 		prod_count +=1;
 		
@@ -98,95 +91,33 @@ static int fifoproc_open(struct inode *inode, struct file *file){
 		while (cons_count < 1){
 			cond_wait(prod,mtx);
 		}
-		cons_signal(cons);
-		/**/	
+		cons_signal(prod_count);
+
 		unlock(mtx);
 	}
-	
 	return 0;
 }
 
-static int fifoproc_open(struct inode *inode, struct file *file){
+/* done */
+void fifoproc_release(struct inode *inode, struct file *file){
 	
-	// esperar a los dos que estén inicializados. 
-	if(file->f_mode & FMODE_READ){
-		
-		/* Un consumidor abrió el FIFO */
-		//lock(mtx);
-		if (down_interruptible(&mtx)){return -EINTR;}
-		/* nº procesos que abrieron entrada lectura*/		
-		cons_count += 1;
-		
-		/*NO haya productor, nos bloqueamos*/
-		/*while (prod_count < 1){
-			cond_wait(cons,mtx);
-		}*/
-        while (prod_count == 0){
-        	nr_cons_waiting++;
-        	up(&mtx);
-            if(down_interruptible(&queue_sem_cons)){
-                down_interruptible(&mtx);
-                nr_cons_waiting--;
-                up(&mtx);
-                return -EINTR;
-            }
-            if(down_interruptible(&mtx))
-                return -EINTR;
-        }  // while
-		
-		//cons_signal(prod_count);
-		if(nr_prod_waiting > 0 ) {
-            up(&queue_sem_prod);
-            nr_prod_waiting--;
-        }
+	lock(mtx);
 
-        up(&mtx);
-		//unlock(mtx);
+    if(file->f_mode & FMODE_READ)
+    {
+		 cons_count--;
+		 cond_signal(prod); 
 	
 	}else{
-		/* Un productor abrió el FIFO */
-		//lock(mtx);
-		if (down_interruptible(&mtx)){return -EINTR;}
+		prod_count--;
+		cond_signal(cons); 
+    }
 
-		/* nº procesos que abrieron entrada escritura*/
-		prod_count +=1;
-		
-		/*NO haya consumidor, nos bloqueamos*/
-		/*while (cons_count < 1){
-			cond_wait(prod,mtx);
-		}*/
-		while (cons_count == 0){
-        	nr_prod_waiting++;
-        	up(&mtx);
-            if(down_interruptible(&queue_sem_prod)){
-                down_interruptible(&mtx);
-                nr_prod_waiting--;
-                up(&mtx);
-                return -EINTR;
-            }
-            if(down_interruptible(&mtx))
-                return -EINTR;
-        }  // while
-
-		//cons_signal(prod_count);
-		if(nr_cons_waiting > 0 ) {
-            up(&queue_sem_cons);
-            nr_cons_waiting--;
-        }
-
-        up(&mtx);
-		//unlock(mtx);
-	}
+   if (prod_count==0 && cons_count==0)
+	  clear_cbuffer_t(cbuffer);
+   
+   up(&mtx);
+        
+   return 0;
 	
-	return 0;
-}
-
-/* Sin Hacer */
-void fifoproc_release(struct inode *inode, struct file *file){
-	/* Completar */
-	// hacer al final dependen de las variables condición 
-	//vaciar el buffer circular cuando los dos esten cerrados
-	// decrementar los prod cons conectados
-
-
 }
