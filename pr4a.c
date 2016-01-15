@@ -131,7 +131,7 @@ static ssize_t config_read(struct file *filp, char __user *buf, size_t len, loff
     if((*off) > 0)
         return 0;
 	
-	buffpos += sprintf(buffpos, "timer_period_ms=%lu \nenemergency_threshold=%u \nmax_random=%u \n",timer_p ,emergency, max_rand);
+	buffpos += sprintf(buffpos, "timer_period_ms=%lu \nemergency_threshold=%u \nmax_random=%u \n",timer_p ,emergency, max_rand);
     
     if(buffpos > &kbuff[0] + 1)
         buffpos--; // Go back one byte to overwrite last colon
@@ -158,7 +158,7 @@ static ssize_t config_write(struct file *filp, const char __user *buf, size_t le
 	   
 	kbuf[len]='\0';
 
-	sscanf(kbuf, "emergergency_threshold %u", &emergency);
+	sscanf(kbuf, "emergency_threshold %u", &emergency);
 	sscanf(kbuf, "timer_period_ms %lu", &timer_p);
 	sscanf(kbuf, "max_random %u", &max_rand); 
          
