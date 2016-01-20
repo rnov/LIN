@@ -15,6 +15,7 @@
 #include "cbuffer.h"
 
 #define MAX_KBUFF 256
+#define MAX_SIZE sizeof(unsigned int)*10
 #define DATA_TYPE unsigned int
 
 #define Foreach(pos, aux, list)            \
@@ -56,7 +57,7 @@ static struct proc_dir_entry *proc_entry_conf;
 static struct proc_dir_entry *proc_entry_timer;
 
 /* Default glob var val */
-static unsigned long timer_p = 500;
+static unsigned long timer_p = 500 / HZ;
 static unsigned int max_rand = 3000, emergency = 80;
 
 /* cpu flags used in spin locks*/
@@ -64,31 +65,35 @@ static unsigned long cpu_flag;
 /* Nº of processes waiting */
 static int nr_proc_waiting = 0; 
 
-/* work function (my_wq_function)*/
+/* work function (my_wq_function) */
 static void copy_items_into_list( struct work_struct *work ) {	
 
 	list_item_t *new_node;
-	unsigned int num;
-	int buffer_size;
+	int buffer_size, i =0;
+	//unsigned int auxBuff[250];
 	
 	spin_lock_irqsave(&mr_lock, cpu_flag);
+
+        // size in bytes
 	buffer_size = size_cbuffer_t(cbuffer);
+	unsigned int auxBuff[buffer_size];
+	remove_items_cbuffer_t(cbuffer,auxBuff,buffer_size);
+
+        for(i = 0; i < buffer_size/sizeof(unsigned int); ++i)
+        {
+            printk(KERN_INFO "cbuffer[%i] (%u) -> buffer[%i]\n", i, auxBuff[i], i);
+        }
+
 	spin_unlock_irqrestore(&mr_lock,cpu_flag);
 
 	down_interruptible(&sem);
 	/* while there're nºs in buffer fill the list */
-	while(buffer_size > 0){
+	for(i=0;i<buffer_size/sizeof(unsigned int);i++){
 		new_node = vmalloc(sizeof(list_item_t));
 		
-		spin_lock_irqsave(&mr_lock, cpu_flag);
-		printk(KERN_INFO "Removed from buffer: %u \n", *(head_cbuffer_t(cbuffer)));
-		num = *(head_cbuffer_t(cbuffer));
-		remove_cbuffer_t(cbuffer);
-		spin_unlock_irqrestore(&mr_lock, cpu_flag);
-		
-		new_node->data = num;
+		printk(KERN_INFO "Removed from buffer: %u \n", auxBuff[i]);
+		new_node->data = auxBuff[i];
 		list_add_tail(&(new_node->links), &mylist);
-		buffer_size--;
 	}
 	/* wakes up waiting process (modtimer_read) (Upper layer) */
 	if(nr_proc_waiting >0){
@@ -108,11 +113,13 @@ static void fire_timer(unsigned long data) {
 	printk(KERN_INFO "Generated number: %u \n", rand_val);
     
     spin_lock_irqsave(&mr_lock, cpu_flag);
-    insert_cbuffer_t(cbuffer, rand_val);
-    buffer_size = size_cbuffer_t(cbuffer);
+    insert_items_cbuffer_t(cbuffer, &rand_val, sizeof(unsigned int));
+    
+    // Size in elems
+    buffer_size = size_cbuffer_t(cbuffer)/sizeof(unsigned int);
     spin_unlock_irqrestore(&mr_lock,cpu_flag);  
     
-    if((buffer_size/(double)MAX_SIZE * 100) >= emergency){
+    if((buffer_size/(double)(MAX_SIZE/sizeof(unsigned int)) * 100) >= emergency){
 		/* Enqueue work in different cpu (bottom-half) */
 		if(current_cpu){
 			schedule_work_on(0,&my_work);
@@ -158,10 +165,17 @@ static ssize_t config_write(struct file *filp, const char __user *buf, size_t le
 	   
 	kbuf[len]='\0';
 
+        int oldtimer_p = timer_p;
+
 	sscanf(kbuf, "emergency_threshold %u", &emergency);
 	sscanf(kbuf, "timer_period_ms %lu", &timer_p);
 	sscanf(kbuf, "max_random %u", &max_rand); 
          
+        if(timer_p != oldtimer_p)
+        {
+            timer_p /= HZ;
+        }
+
     (*off)+=len;
 
     return len;
@@ -199,12 +213,12 @@ static ssize_t modtimer_read(struct file *filp, char __user *buf, size_t len, lo
 		printk("Items in list removed: %u \n",tmp->data);
 		list_del(pos);
 		// checks whether there is enough space for nºs in kbuff
-                if(count < max_elems){	
-                    buffpos += sprintf(buffpos, "%u\n", tmp->data);
-                }else{
-                    printk("max nº of items in buffer reached: %i cout: %i \n",max_elems,count);
-                }
-                vfree(tmp);
+        if(count < max_elems){	
+			buffpos += sprintf(buffpos, "%u\n", tmp->data);
+		}else{
+			printk("max nº of items in buffer reached: %i cout: %i \n",max_elems,count);
+		}
+		vfree(tmp);
         count++;
 	Endforeach()
 	
@@ -264,7 +278,7 @@ int init_timer_module( void ) {
 	/* Initialize work structure (with function) */
 	INIT_WORK(&my_work, copy_items_into_list);  // my_wq_function
 	/* initialize *cbuffer */
-	cbuffer = create_cbuffer_t();
+	cbuffer = create_cbuffer_t(MAX_SIZE);
 	/* initializa the list */
 	INIT_LIST_HEAD(&mylist);  
 
@@ -314,4 +328,3 @@ module_init( init_timer_module );
 module_exit( cleanup_timer_module );
 
 /* NOTA: sudo tail -f /var/log/kern.log */
-
