@@ -6,6 +6,7 @@
 #include <linux/ftrace.h> /* debugging */
 
 MODULE_LICENSE("GPL"); /* Licencia del modulo */
+MODULE_AUTHOR("rnov");
 
 /* Nodos de la lista */
 typedef struct {
@@ -29,11 +30,17 @@ static struct proc_dir_entry *proc_entry;
 
 /* To do*/
 static ssize_t list_write(struct file *filp, const char __user *buf, size_t len, loff_t *off) {
+    
     char kbuf[len]; int num;
+    // remove + 10 dig -> 16
+    if(len >= 17)
+		return -ENOMEM;
 
     /* Transfer data from user to kernel space */
         if (copy_from_user(&kbuf, buf, len))  
         return -EFAULT;
+
+    kbuf[len]='\0';
 
     if(sscanf(kbuf, "add %i", &num) == 1) {  // add command
         trace_printk("Executing command 'add %i'\n", num);
@@ -93,7 +100,6 @@ static ssize_t list_read(struct file *filp, char __user *buf, size_t len, loff_t
         buffpos--; // Go back one byte to overwrite last colon
 
     //buffpos += sprintf(buffpos, ")\n");
-
     size_t written = min(len, buffpos - &kbuff[0]);
 
     kbuff[written] = '\0';
